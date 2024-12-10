@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
@@ -14,6 +15,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shake/shake.dart';
 
 import 'dataBase.dart';
+import 'notification.dart';
+import 'audio.dart';
+
 
 
 
@@ -49,13 +53,18 @@ class _FinderPageExtend extends State<FinderPage> {
     //for locator
     _getCurrentLocation();
     Geolocator.getPositionStream().listen(
-            (Position? position) {
+            (Position? position) async {
           print(position == null ? 'Unknown' : '${position.latitude.toString()}, ${position.longitude.toString()}');
           newlat = position!.latitude;
           newlong = position!.longitude;
           _getCurrentLocation();
           _mapController.move(LatLng(newlat, newlong), 18);
           _findClosestMarker();
+
+          if(closest_distance <= 20) {
+            NotificationService.showInstantNotification("A Terpiez is near!", "It's ${closest_distance.toStringAsFixed(2)} away! Catch it before it escapes!");
+            await playSoundFromAssets();
+          }
         });
     //for ShakeDetector
     _shakeDetector = ShakeDetector.autoStart(
@@ -198,14 +207,19 @@ class _FinderPageExtend extends State<FinderPage> {
                   ElevatedButton(
                   //if curr location marker's distance is 10m to a terpiez, and user
                   //press button, icrement it
-                  onPressed: () {
+                  onPressed: () async {
                   if(closest_distance <= 10) {
-                  Provider.of<StatsCounter>(context, listen: false).incrementTerpiezCounter();
-                  addCaught(idToRemove!, curr_marker!.point.latitude, curr_marker!.point.longitude);
-                  removeItemById(idToRemove!, curr_marker!.point.latitude, curr_marker!.point.longitude);
-                  widget.onCaptureSuccess();
-                  _showCaptureSuccessDialog(context, idToRemove!);
-                  }
+                    Provider.of<StatsCounter>(context, listen: false).incrementTerpiezCounter();
+                    addCaught(idToRemove!, curr_marker!.point.latitude, curr_marker!.point.longitude);
+                    removeItemById(idToRemove!, curr_marker!.point.latitude, curr_marker!.point.longitude);
+                    widget.onCaptureSuccess();
+                    _showCaptureSuccessDialog(context, idToRemove!);
+                    await playSoundFromAssets();
+                    }
+
+                    //await playSoundFromAssets();
+
+
                   },
                   child: Text('Capture the TERPIEZ'),
                   ),
@@ -279,14 +293,16 @@ class _FinderPageExtend extends State<FinderPage> {
                           ElevatedButton(
                           //if curr location marker's distance is 10m to a terpiez, and user
                           //press button, increment it
-                          onPressed: () {
+                          onPressed: () async {
                           if(closest_distance <= 10) {
                           Provider.of<StatsCounter>(context, listen: false).incrementTerpiezCounter();
                           addCaught(idToRemove!, curr_marker!.point.latitude, curr_marker!.point.longitude);
                           removeItemById(idToRemove!, curr_marker!.point.latitude, curr_marker!.point.longitude);
                           widget.onCaptureSuccess();
                           _showCaptureSuccessDialog(context, idToRemove!);
+                          await playSoundFromAssets();
                           }
+                          //NotificationService.showInstantNotification("Instant Notification", "button pressed");
                           },
                           child: Text('Capture the TERPIEZ'),
                           ),
@@ -330,6 +346,12 @@ class StatsCounter with ChangeNotifier {
   void incrementTerpiezCounter() {
     _terpiezCounter = _terpiezCounter! + 1;
     _prefs?.setInt(_terpiezFound, _terpiezCounter!);//save
+    notifyListeners();
+  }
+
+  void resetTerpiezCounter() async {
+    _terpiezCounter = 0;
+    await _prefs?.setInt(_terpiezFound, _terpiezCounter!);
     notifyListeners();
   }
 }

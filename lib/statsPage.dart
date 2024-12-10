@@ -42,16 +42,15 @@ class _StatsPageState extends State<StatsPage> {
   //uuid
   static const String _userID = 'userId';
   String? uuid;
-  int? numFound;
 
 
   @override
   void initState() {
     super.initState();
-    _initializeUserID();
+    initializeUserID();
   }
 
-  Future<void> _initializeUserID() async {
+  Future<void> initializeUserID() async {
     _prefs = await SharedPreferences.getInstance();
 
     uuid = _prefs?.getString(_userID);

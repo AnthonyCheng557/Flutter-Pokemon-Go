@@ -40,6 +40,8 @@ dependencies:
   path_provider: ^2.1.5
   convert: ^3.1.2
   shake: ^2.0.0
+  flutter_local_notifications: ^18.0.1
+  audioplayers: ^6.1.0
 
 
 
@@ -73,7 +75,7 @@ flutter:
   shaders:
     - my_shader.frag
   assets:
-    - assets/path29jan24.gpx
+    - assets/click_sound.mp3
 
   # To add assets to your application, add an assets section, like this:
   # assets:

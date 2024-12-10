@@ -1,8 +1,10 @@
 import 'dart:ui';
 import 'dart:io';
 import 'dart:convert';
+import 'audio.dart';
 import 'dataBase.dart';
 import 'findersPage.dart';
+import 'notification.dart';
 import 'statsPage.dart';
 import 'credentialPrompt.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -24,17 +26,32 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:typed_data';
 
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'background_service.dart';
+
+import 'global.dart';
+
 
 late FragmentProgram fragmentProgram;
 SharedPreferences? _prefs;
 
+FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+FlutterLocalNotificationsPlugin();
+
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  //storage is for deleting is needed
   final FlutterSecureStorage storage = const FlutterSecureStorage();
+
   fragmentProgram = await FragmentProgram.fromAsset('my_shader.frag');
-  //
-  //await storage.deleteAll();
+
+  await NotificationService.init();
+  NotificationService.showInstantNotification("Instant Notification", "Initializing");
+  await playSoundFromAssets();
+
+
+
 
   runApp(
     MultiProvider(
@@ -53,8 +70,177 @@ Future<void> main() async {
 
 
 
+class HomePage extends StatefulWidget {
+  const HomePage({super.key, required this.title, this.initialTabIndex = 0});
+
+  final String title;
+  final int initialTabIndex;
+
+  @override
+  _HomePageState createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(
+        length: 3,
+        vsync: this,
+        initialIndex: widget.initialTabIndex
+    );
+
+    //connect to database and refresh data when the page loads
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      connectToRedisDataBase(context);
+      getUncaught_getInfo();
+    });
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 3,
+      child: Scaffold(
+        drawer: Drawer(
+          child: ListView(
+            padding: EdgeInsets.zero,
+            children: <Widget>[
+              DrawerHeader(
+                decoration: BoxDecoration(
+                  color: Theme.of(context).primaryColor,
+                ),
+                child: Text(
+                  'Menu',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 24,
+                  ),
+                ),
+              ),
+              ListTile(
+                leading: Icon(Icons.settings),
+                title: Text('Preferences'),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => SettingsPage()),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+        appBar: AppBar(
+          leading: Builder(
+            builder: (context) => IconButton(
+              icon: Icon(Icons.menu),
+              onPressed: () => Scaffold.of(context).openDrawer(),
+            ),
+          ),
+          centerTitle: false,
+          backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+          title: Text(
+            widget.title,
+            textAlign: TextAlign.left,
+          ),
+          bottom: TabBar(
+            controller: _tabController,
+            tabs: [
+              Tab(icon: Icon(Icons.query_stats), text: 'Stats'),
+              Tab(icon: Icon(Icons.search), text: 'Finder'),
+              Tab(icon: Icon(Icons.list), text: 'List')
+            ],
+          ),
+        ),
+        body: SafeArea(
+          child: TabBarView(
+            controller: _tabController,
+            children: [
+              StatsPage(),
+              FinderPage(
+                onCaptureSuccess: () {
+                  Provider.of<RefreshController>(context, listen: false).refresh();
+                },
+              ),
+              Consumer<RefreshController>(
+                builder: (context, refreshController, child) {
+                  return FutureBuilder<List<Widget>>(
+                    future: refreshController.pagesFuture ?? listPages(),
+                    builder: (context, pagesSnapshot) {
+                      return FutureBuilder<int>(
+                        future: caughtSize(),
+                        builder: (context, sizeSnapshot) {
+                          return FutureBuilder<List<String>>(
+                            future: nameList(),
+                            builder: (context, namesSnapshot) {
+                              return FutureBuilder<List<File>>(
+                                future: listThumbnail(),
+                                builder: (context, thumbnailsSnapshot) {
+                                  return ListView.builder(
+                                    itemCount: sizeSnapshot.data ?? 0,
+                                    itemBuilder: (context, index) {
+                                      return ListTile(
+                                        title: Text(namesSnapshot.data?[index] ?? 'Unknown'),
+                                        leading: Hero(
+                                          tag: namesSnapshot.data?[index] ?? 'default',
+                                          child: SizedBox(
+                                            width: 50.0,
+                                            height: 50.0,
+                                            child: thumbnailsSnapshot.data?[index] != null
+                                                ? Image.file(
+                                              thumbnailsSnapshot.data![index],
+                                              fit: BoxFit.cover,
+                                            )
+                                                : const Placeholder(),
+                                          ),
+                                        ),
+                                        onTap: () {
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (context) => pagesSnapshot.data![index],
+                                            ),
+                                          );
+                                        },
+                                      );
+                                    },
+                                  );
+                                },
+                              );
+                            },
+                          );
+                        },
+                      );
+                    },
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
+  static final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
+  static BuildContext get context {
+    return navigatorKey.currentContext!;
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -64,123 +250,145 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
       ),
       home: const HomePage(title: 'Terpiez'),
+      navigatorKey: navigatorKey,
+      routes: {
+        '/home': (context) => const HomePage(title: 'Terpiez'),
+        '/home/tab1': (context) => const HomePage(title: 'Terpiez', initialTabIndex: 0),
+        '/home/tab2': (context) => const HomePage(title: 'Terpiez', initialTabIndex: 1),
+        '/home/tab3': (context) => const HomePage(title: 'Terpiez', initialTabIndex: 2),
+      },
     );
   }
 }
 
-class HomePage extends StatelessWidget {
-  const HomePage({super.key, required this.title});
+//settings page
+class SettingsPage extends StatefulWidget {
+  @override
+  _SettingsPageState createState() => _SettingsPageState();
+}
 
-  final String title;
-
+class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
-    final refreshController = Provider.of<RefreshController>(context, listen: false);
-    //clearPref();
-    connectToRedisDataBase(context);
-    getUncaught_getInfo();
-
-    //listThumbnail();
-    //listPages();
-
-
-    return DefaultTabController(
-      length: 3,
-      child: Scaffold(
-        appBar: AppBar(
-          centerTitle: false,
-          backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-          title: Text(
-            title,
-            textAlign: TextAlign.left,
-          ),
-          bottom: TabBar(tabs: [
-            Tab(
-              icon: Icon(Icons.query_stats),
-              text: 'Stats',
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Preferences'),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Sound Settings',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
-            Tab(icon: Icon(Icons.search), text: 'Finder'),
-            Tab(icon: Icon(Icons.list), text: 'List')
-          ]),
-        ),
-        body: SafeArea(
-          child: TabBarView(
-            children: [
-              //stats Page
-              Tab(
-                child: StatsPage(),
-              ),
-              //finders Page
-              Tab(
-                child: FinderPage(
-                  onCaptureSuccess: () {
-                    Provider.of<RefreshController>(context, listen: false).refresh();
+            SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Enable Sound',
+                  style: TextStyle(fontSize: 16),
+                ),
+                Switch(
+                  value: isSoundEnabled,
+                  activeColor: Colors.blue,
+                  inactiveThumbColor: Colors.grey,
+                  inactiveTrackColor: Colors.grey.shade300,
+                  onChanged: (bool value) {
+                    setState(() {
+                      isSoundEnabled = value;
+                    });
+                    print(isSoundEnabled
+                        ? 'HERE Sound Enabled'
+                        : 'HERE Sound Disabled');
                   },
                 ),
-              ),
-              //list Page
-              Tab(
-                child: Consumer<RefreshController>( //consume rebuild
-                  builder: (context, refreshController, child) {
-                    return FutureBuilder<List<Widget>>(
-                      future: refreshController.pagesFuture ?? listPages(),
-                      builder: (context, pagesSnapshot) {
-                        return FutureBuilder<int>(
-                          future: caughtSize(),
-                          builder: (context, sizeSnapshot) {
-                            return FutureBuilder<List<String>>(
-                              future: nameList(),
-                              builder: (context, namesSnapshot) {
-                                return FutureBuilder<List<File>>(
-                                  future: listThumbnail(),
-                                  builder: (context, thumbnailsSnapshot) {
-                                    return ListView.builder(
-                                      itemCount: sizeSnapshot.data ?? 0,
-                                      itemBuilder: (context, index) {
-                                        return ListTile(
-                                          title: Text(namesSnapshot.data?[index] ?? 'Unknown'),
-                                          leading: Hero(
-                                            tag: namesSnapshot.data?[index] ?? 'default',
-                                            child: SizedBox(
-                                              width: 50.0,
-                                              height: 50.0,
-                                              child: thumbnailsSnapshot.data?[index] != null
-                                                  ? Image.file(
-                                                thumbnailsSnapshot.data![index],
-                                                fit: BoxFit.cover,
-                                              )
-                                                  : const Placeholder(),
-                                            ),
-                                          ),
-                                          onTap: () {
-                                            Navigator.push(
-                                              context,
-                                              MaterialPageRoute(
-                                                builder: (context) => pagesSnapshot.data![index],
-                                              ),
-                                            );
-                                          },
-                                        );
-                                      },
-                                    );
-                                  },
-                                );
-                              },
-                            );
-                          },
-                        );
-                      },
-                    );
-                  },
+              ],
+            ),
+            SizedBox(height: 32),
+            GestureDetector(
+              onTap: _showResetConfirmationDialog,
+              child: Text(
+                'Reset',
+                style: TextStyle(
+                  color: Colors.red,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
+
+  void _showResetConfirmationDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.warning_amber_rounded,
+                  color: Colors.brown,
+                  size: 50,
+                ),
+                SizedBox(width: 8),
+                Text('Clear User Data?'),
+              ],
+            ),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'This is a destructive action, and will delete all of your progress. Do you really want to proceed?',
+                style: TextStyle(fontSize: 16),
+              ),
+              SizedBox(height: 16),
+            ],
+          ),
+          actions: [
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+              child: Text(
+                'No, canel and keep my data',
+                style: TextStyle(color: Colors.white),
+              ),
+              onPressed: () {
+
+                Navigator.of(context).pop();
+              },
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+              child: Text(
+                'Yes, really clear',
+                style: TextStyle(color: Colors.white),
+              ),
+              onPressed: () async {
+                clearPref();
+                //rest counter
+                Provider.of<StatsCounter>(context, listen: false).resetTerpiezCounter();
+                getUncaught_getInfo();
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
 }
+
 
 //the pages
 class BugPage extends StatelessWidget {
