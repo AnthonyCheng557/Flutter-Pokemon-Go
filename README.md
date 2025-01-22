@@ -4,5 +4,5 @@ A new Flutter project. A Copy of Pokemon GO, using several layers of Flutter API
 
 ## Video
 
-https://drive.google.com/drive/u/2/folders/1EI4Nul98etWAC8fXI_tWILi2OoYzj6AL
+https://drive.google.com/file/d/1bG7xAMP1u_07z8wi4DXY_sD7L8gUKst0/view?usp=sharing
 
