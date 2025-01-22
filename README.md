@@ -1,16 +1,8 @@
-# terpiez
+# Terpiez Go
 
-A new Flutter project.
+A new Flutter project. A Copy of Pokemon GO, using several layers of Flutter API and Redis.
 
-## Getting Started
+## Video
 
-This project is a starting point for a Flutter application.
+https://drive.google.com/drive/u/2/folders/1EI4Nul98etWAC8fXI_tWILi2OoYzj6AL
 
-A few resources to get you started if this is your first Flutter project:
-
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
